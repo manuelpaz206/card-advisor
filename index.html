@@ -141,7 +141,7 @@
     <div class="chip" onclick="quickAsk('JetBlue flight')">JetBlue</div>
   </div>
 
-  <div class="fetch-status" id="fetchStatus">
+  <div class="fetch-status" id="fetchStatus" onclick="retryFetch()" style="cursor:pointer">
     <div class="fetch-dot" id="fetchDot"></div>
     <span id="fetchLabel">fetching live categories...</span>
   </div>
@@ -379,6 +379,12 @@ Line 3: why: [under 10 words, lowercase]
 Valid card names: Chase Freedom Flex, Chase Freedom Unlimited, Chase Sapphire Preferred, Discover it`;
 }
 
+function retryFetch() {
+  sessionStorage.removeItem('rotatingCategories');
+  rotatingCategories = { flex: null, discover: null, quarter: null, fetchedAt: null };
+  fetchRotatingCategories();
+}
+
 async function fetchRotatingCategories() {
   // Check sessionStorage cache first
   const cached = sessionStorage.getItem('rotatingCategories');
@@ -401,7 +407,12 @@ async function fetchRotatingCategories() {
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 300,
@@ -423,8 +434,16 @@ async function fetchRotatingCategories() {
     updateCategoryDisplay();
     setFetchStatus('live', `${rotatingCategories.quarter} · live`);
   } catch(err) {
-    setFetchStatus('err', 'could not fetch categories · using search per query');
-    console.warn('Category fetch failed:', err);
+    let msg = err.message || 'unknown error';
+    // CORS errors show as generic TypeError — call that out specifically
+    if (err instanceof TypeError) msg = 'network/CORS error — check console';
+    if (msg.includes('401')) {
+      localStorage.removeItem('claudeKey');
+      showSetup();
+      msg = 'invalid key — please re-enter';
+    }
+    setFetchStatus('err', `fetch failed: ${msg}`);
+    console.error('Category fetch failed:', err);
   }
 }
 
@@ -597,7 +616,12 @@ async function askClaude() {
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
       body: JSON.stringify(body)
     });
     const data = await res.json();
