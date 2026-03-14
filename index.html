@@ -358,7 +358,7 @@ async function identifyMerchant(merchant, apiKey) {
       max_tokens: 50,
       messages: [{
         role: 'user',
-        content: `What spending category is "${merchant}"? Reply with ONLY one word from this list: dining, travel, grocery, drugstore, streaming, amazon, gas, other. No explanation.`
+        content: `Category of "${merchant}"? One word: dining, travel, grocery, drugstore, streaming, amazon, gas, or other.`
       }]
     })
   });
@@ -401,21 +401,9 @@ function getCurrentQuarter() {
 
 const CURRENT_QUARTER = getCurrentQuarter();
 
-const CATEGORIES_PROMPT = `You are a credit card data extractor. Today is ${new Date().toLocaleDateString('en-US', {month:'long', year:'numeric'})}.
-
-Search for the CURRENT active 5% bonus categories for Chase Freedom Flex and Discover it this quarter (${getCurrentQuarter()}).
-
-STEP 1: Search "Chase Freedom Flex ${getCurrentQuarter()} 5% bonus categories"
-STEP 2: Search "Discover it card ${getCurrentQuarter()} 5% rotating categories"
-
-Respond ONLY with valid JSON, no markdown, no explanation:
-{
-  "quarter": "${getCurrentQuarter()}",
-  "flex": ["category1", "category2", "category3"],
-  "discover": ["category1", "category2"]
-}
-
-Use short, clean category names (e.g. "Dining", "Amazon", "Grocery stores", "Gas stations"). Be accurate — only include categories actually active this quarter.`;
+const CATEGORIES_PROMPT = `Return ONLY valid JSON listing the active 5% bonus categories this quarter (${getCurrentQuarter()}) for Chase Freedom Flex and Discover it. Search if needed. Format:
+{"quarter":"${getCurrentQuarter()}","flex":["Category1","Category2"],"discover":["Category1","Category2"]}
+Short category names only (e.g. "Dining", "Grocery stores", "Amazon", "Gas stations"). No markdown, no explanation.`;
 
 function buildDynamicPrompt(cats) {
   const flexList = cats.flex ? cats.flex.join(', ') : 'unknown';
@@ -448,20 +436,25 @@ Valid card names: Chase Freedom Flex, Chase Freedom Unlimited, Chase Sapphire Pr
 }
 
 function retryFetch() {
-  sessionStorage.removeItem('rotatingCategories');
+  localStorage.removeItem('rotatingCategories');
   rotatingCategories = { flex: null, discover: null, quarter: null, fetchedAt: null };
   fetchRotatingCategories();
 }
 
 async function fetchRotatingCategories() {
-  // Check sessionStorage cache first
-  const cached = sessionStorage.getItem('rotatingCategories');
+  // Check localStorage cache — valid for the rest of the calendar day
+  const cached = localStorage.getItem('rotatingCategories');
   if (cached) {
     try {
-      rotatingCategories = JSON.parse(cached);
-      updateCategoryDisplay();
-      setFetchStatus('live', `${rotatingCategories.quarter} · live`);
-      return;
+      const parsed = JSON.parse(cached);
+      const cachedDate = new Date(parsed.fetchedAt).toDateString();
+      const today = new Date().toDateString();
+      if (cachedDate === today && parsed.flex && parsed.discover) {
+        rotatingCategories = parsed;
+        updateCategoryDisplay();
+        setFetchStatus('live', `${rotatingCategories.quarter} · live`);
+        return;
+      }
     } catch(e) {}
   }
 
@@ -498,7 +491,7 @@ async function fetchRotatingCategories() {
     if (!parsed.flex || !parsed.discover) throw new Error('incomplete response');
 
     rotatingCategories = { ...parsed, fetchedAt: Date.now() };
-    sessionStorage.setItem('rotatingCategories', JSON.stringify(rotatingCategories));
+    localStorage.setItem('rotatingCategories', JSON.stringify(rotatingCategories));
     updateCategoryDisplay();
     setFetchStatus('live', `${rotatingCategories.quarter} · live`);
   } catch(err) {
