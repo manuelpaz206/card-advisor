@@ -238,14 +238,15 @@ const KEYWORDS = {
   jetblue: ['jetblue', 'jet blue'],
   dining:  ['restaurant','dining','dinner','lunch','breakfast','cafe','coffee','starbucks','chipotle','tatte','doordash','ubereats','grubhub','seamless','food delivery','bar','nightlife','bakery','pizza','sushi','thai','mexican','italian','ramen','burger','sandwich','deli','brunch','bistro','nespresso','pressed cafe','cuppa','kava','tavern','grille','cantina','trattoria','brasserie','eatery','kitchen','grill','taqueria','bbq'],
   travel:  ['flight','hotel','airbnb','uber','lyft','taxi','mbta','train','subway','amtrak','parking','toll','ferry','car rental','airline','airport','transit','delta','american airlines','united airlines','southwest','british airways','lufthansa','emirates','zipcar','commuter rail'],
+  grocery: ['grocery','groceries','supermarket','star market','starmarket','market basket','hannaford','stop & shop','stop and shop','shaw\'s','shaws','whole foods','trader joe','wegmans','aldi','lidl','kroger','safeway','publix','costco','bj\'s','bjs','sam\'s club','sams club','h-e-b','heb','food lion','giant','meijer','sprouts'],
 };
 
 // Maps rotating category names (from AI fetch) → our local keyword categories
-// So if Flex returns "Dining", we know to check dining keywords against it
+// So if Flex returns "Grocery stores", we know to check grocery keywords against it
 const CATEGORY_ALIASES = {
   dining:   ['dining', 'restaurants', 'food', 'eating'],
   travel:   ['travel', 'hotels', 'airlines', 'gas stations', 'gas', 'transit', 'transportation'],
-  grocery:  ['grocery', 'groceries', 'supermarkets', 'wholesale clubs'],
+  grocery:  ['grocery', 'groceries', 'supermarket', 'supermarkets', 'wholesale clubs', 'wholesale'],
   amazon:   ['amazon', 'amazon.com', 'whole foods'],
   drugstore:['drugstore', 'drug stores', 'pharmacy', 'cvs', 'walgreens'],
   streaming:['streaming', 'digital entertainment', 'digital wallets', 'paypal'],
@@ -269,37 +270,44 @@ function matchesRotating(merchantInput, detectedCategory, categoryList) {
   return false;
 }
 
-// Detect local keyword category for merchant input
-function detectCategory(input) {
+// Detect ALL matching local categories for a merchant (not just first)
+function detectCategories(input) {
   const q = input.toLowerCase();
+  const matched = [];
   for (const [key, words] of Object.entries(KEYWORDS)) {
-    if (words.some(w => q.includes(w))) return key;
+    if (words.some(w => q.includes(w))) matched.push(key);
   }
-  return null;
+  return matched; // e.g. ['grocery'] or ['dining'] or ['grocery','amazon']
+}
+
+// detectCategory kept for compat — returns first match
+function detectCategory(input) {
+  return detectCategories(input)[0] || null;
 }
 
 // Full priority-aware classification — returns a result object or null (→ AI fallback)
 function classify(input) {
   const q = input.toLowerCase();
-  const category = detectCategory(input);
+  const categories = detectCategories(input); // all matching categories
+  const category = categories[0] || null;     // primary
 
   // 1. Rent — always Bilt, no exceptions
-  if (category === 'rent') return CARD_RESULTS.bilt;
+  if (categories.includes('rent')) return CARD_RESULTS.bilt;
 
   // 2. JetBlue — always JetBlue card
-  if (category === 'jetblue') return CARD_RESULTS.jetblue;
+  if (categories.includes('jetblue')) return CARD_RESULTS.jetblue;
 
   // If we have rotating categories loaded, check them before fixed rules
   const hasCats = rotatingCategories.flex && rotatingCategories.discover;
   if (hasCats) {
-    const flexMatch  = matchesRotating(q, category, rotatingCategories.flex);
-    const discMatch  = matchesRotating(q, category, rotatingCategories.discover);
+    // Check ALL detected categories against rotating lists (fixes Whole Foods/Amazon overlap)
+    const flexMatch  = categories.some(cat => matchesRotating(q, cat, rotatingCategories.flex));
+    const discMatch  = categories.some(cat => matchesRotating(q, cat, rotatingCategories.discover));
 
     // 3. Freedom Flex 5% beats everything except Bilt/JetBlue
     if (flexMatch) {
-      const cats = rotatingCategories.flex.join(', ');
       return { ...CARD_RESULTS.flex5,
-        reason: `Freedom Flex has 5% this quarter (${rotatingCategories.quarter}) which beats all other multipliers.`,
+        reason: `Freedom Flex has 5% this quarter (${rotatingCategories.quarter}), which beats all other multipliers.`,
         why: `5% flex > other cards this quarter` };
     }
 
@@ -310,48 +318,104 @@ function classify(input) {
         why: `5% discover, flex doesn't apply` };
     }
 
-    // 5. Neither rotating card matches — now apply fixed multipliers
-    if (category === 'dining') return CARD_RESULTS.csp_dining;
-    if (category === 'travel') return CARD_RESULTS.csp_travel;
+    // 5. Neither rotating card matches — apply fixed multipliers
+    if (categories.includes('dining')) return CARD_RESULTS.csp_dining;
+    if (categories.includes('travel')) return CARD_RESULTS.csp_travel;
 
-    // 6. Known category, no rotating match, not dining/travel → Freedom Unlimited
+    // 6. Known category (grocery, drugstore, etc.), no rotating match → Freedom Unlimited
     if (category) return CARD_RESULTS.fu;
 
-    // 7. Unknown merchant, categories loaded — still send to AI to check
-    // (AI will use the pre-fetched categories, no web search needed)
+    // 7. Unknown merchant — send to AI with pre-fetched categories (no web search)
     return null;
   }
 
-  // No rotating categories yet — use fixed rules for clear categories, AI for ambiguous
-  if (category === 'dining') return CARD_RESULTS.csp_dining;
-  if (category === 'travel') return CARD_RESULTS.csp_travel;
+  // No rotating categories yet — fixed rules for known categories, AI for ambiguous
+  if (categories.includes('dining')) return CARD_RESULTS.csp_dining;
+  if (categories.includes('travel')) return CARD_RESULTS.csp_travel;
+  if (category) return CARD_RESULTS.fu; // grocery, drugstore etc. → FU if no categories loaded
 
-  // Unknown → AI fallback (will do web search since no categories cached)
+  // Truly unknown → AI fallback (will web search since no categories cached)
   return null;
 }
 
-// ── ROTATING CATEGORIES: fetched once on load ────────────────────────────────
-// Stored in window.rotatingCategories and sessionStorage for the session.
+// ── MERCHANT IDENTIFICATION ───────────────────────────────────────────────────
+// When a merchant name doesn't match any keyword, ask AI what TYPE it is.
+// AI only answers a factual question — card selection stays in JS.
+
+const VALID_CATEGORIES = ['dining', 'travel', 'grocery', 'drugstore', 'streaming', 'amazon', 'gas', 'other'];
+
+async function identifyMerchant(merchant, apiKey) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 50,
+      messages: [{
+        role: 'user',
+        content: `What spending category is "${merchant}"? Reply with ONLY one word from this list: dining, travel, grocery, drugstore, streaming, amazon, gas, other. No explanation.`
+      }]
+    })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error?.message || `API ${res.status}`);
+  const raw = data.content?.find(b => b.type === 'text')?.text?.trim().toLowerCase() || 'other';
+  // Sanitize — only accept known categories
+  return VALID_CATEGORIES.find(c => raw.includes(c)) || 'other';
+}
+
+// Apply priority rules given a known category — pure JS, no AI
+function classifyByCategory(categories, merchant) {
+  const q = merchant.toLowerCase();
+  const hasCats = rotatingCategories.flex && rotatingCategories.discover;
+
+  if (hasCats) {
+    const flexMatch = categories.some(cat => matchesRotating(q, cat, rotatingCategories.flex));
+    const discMatch = categories.some(cat => matchesRotating(q, cat, rotatingCategories.discover));
+    if (flexMatch) return { ...CARD_RESULTS.flex5,
+      reason: `Freedom Flex has 5% this quarter (${rotatingCategories.quarter}), which beats all other multipliers.`,
+      why: `5% flex > other cards this quarter` };
+    if (discMatch) return { ...CARD_RESULTS.discover5,
+      reason: `Discover it has 5% this quarter (${rotatingCategories.quarter}) and Freedom Flex doesn't cover this category.`,
+      why: `5% discover, flex doesn't apply` };
+  }
+
+  if (categories.includes('dining')) return CARD_RESULTS.csp_dining;
+  if (categories.includes('travel')) return CARD_RESULTS.csp_travel;
+  return CARD_RESULTS.fu;
+}
 
 let rotatingCategories = { flex: null, discover: null, quarter: null, fetchedAt: null };
 
+function getCurrentQuarter() {
+  const m = new Date().getMonth();
+  const y = new Date().getFullYear();
+  const q = m < 3 ? 'Q1' : m < 6 ? 'Q2' : m < 9 ? 'Q3' : 'Q4';
+  return `${q} ${y}`;
+}
+
+const CURRENT_QUARTER = getCurrentQuarter();
+
 const CATEGORIES_PROMPT = `You are a credit card data extractor. Today is ${new Date().toLocaleDateString('en-US', {month:'long', year:'numeric'})}.
 
-Search for the current active 5% bonus categories for:
-1. Chase Freedom Flex this quarter
-2. Discover it card this quarter
+Search for the CURRENT active 5% bonus categories for Chase Freedom Flex and Discover it this quarter (${getCurrentQuarter()}).
 
-STEP 1: Search "Chase Freedom Flex 2026 Q1 5% bonus categories"
-STEP 2: Search "Discover it card 2026 Q1 5% rotating categories"
+STEP 1: Search "Chase Freedom Flex ${getCurrentQuarter()} 5% bonus categories"
+STEP 2: Search "Discover it card ${getCurrentQuarter()} 5% rotating categories"
 
 Respond ONLY with valid JSON, no markdown, no explanation:
 {
-  "quarter": "Q1 2026",
+  "quarter": "${getCurrentQuarter()}",
   "flex": ["category1", "category2", "category3"],
   "discover": ["category1", "category2"]
 }
 
-Use short, clean category names (e.g. "Dining", "Amazon", "Grocery stores", "Gas stations"). Be accurate — only include categories that are actually active this quarter.`;
+Use short, clean category names (e.g. "Dining", "Amazon", "Grocery stores", "Gas stations"). Be accurate — only include categories actually active this quarter.`;
 
 function buildDynamicPrompt(cats) {
   const flexList = cats.flex ? cats.flex.join(', ') : 'unknown';
@@ -362,14 +426,18 @@ CURRENT ROTATING CATEGORIES (already fetched — do NOT search):
 - Chase Freedom Flex (${cats.quarter}): ${flexList}
 - Discover it (${cats.quarter}): ${discoverList}
 
-PRIORITY ORDER — pick the highest that applies:
+PRIORITY ORDER — apply the first rule that matches, no exceptions:
 1. Freedom Flex 5% — if merchant clearly falls under a Flex category above
 2. Discover it 5% — if merchant clearly falls under a Discover category above (and not Flex)
 3. Chase Sapphire Preferred 3x — if merchant is dining/food but no rotating card covers it
 4. Chase Sapphire Preferred 2x — if merchant is travel but no rotating card covers it
 5. Chase Freedom Unlimited 1.5% — default if nothing above applies
 
-CRITICAL: Only assign a 5% card if there is a direct, clear match. Do not stretch categories.
+STRICT RULES — these are absolute, never override them:
+- A 5% rotating card ALWAYS beats a 3x or 2x fixed card. Always. No exceptions.
+- Do NOT invent reasons why a 5% card shouldn't apply (e.g. "you already have a primary card", "this doesn't qualify", etc.)
+- Do NOT consider cards outside this list
+- Only skip a 5% card if the merchant genuinely doesn't match the category
 
 RESPONSE FORMAT — plain text only, no markdown, no emoji, exactly 3 lines:
 Line 1: [CARD NAME] — [rate]
@@ -469,25 +537,33 @@ function setFetchStatus(state, label) {
 // ── DYNAMIC PROMPT: only for ambiguous/rotating category queries ─────────────
 // Uses pre-fetched categories if available, falls back to web search.
 
-const DYNAMIC_PROMPT_SEARCH = `You are a credit card advisor for Manuel in Boston. A static pre-filter already handles dining (Sapphire 3x), travel (Sapphire 2x), rent (Bilt), and JetBlue. You only receive queries that are ambiguous or could qualify for a rotating 5% category.
+const DYNAMIC_PROMPT_SEARCH = `You are a credit card advisor for Manuel in Boston. A static pre-filter already handles rent (Bilt), JetBlue, and clearly known merchants. You only receive ambiguous queries.
 
-YOUR ONLY JOB: check if Chase Freedom Flex or Discover it has an active 5% category that covers this specific merchant.
+YOUR ONLY JOB: check if Chase Freedom Flex or Discover it has an active 5% category covering this merchant this quarter (${getCurrentQuarter()}).
 
-STEP 1: Search "Chase Freedom Flex Q1 2026 5% bonus categories"
-STEP 2: Search "Discover it Q1 2026 5% cashback categories"
-STEP 3: Decide — does this merchant clearly fall under one of those active categories?
-- If Freedom Flex covers it → recommend Chase Freedom Flex (5% as points, beats cash back)
-- If only Discover covers it → recommend Discover it (5% cash back)
-- If NEITHER covers this merchant → recommend Chase Freedom Unlimited (1.5%)
+STEP 1: Search "Chase Freedom Flex ${getCurrentQuarter()} 5% bonus categories"
+STEP 2: Search "Discover it card ${getCurrentQuarter()} 5% rotating categories"
+STEP 3: Does this merchant clearly fall under one of those active categories?
 
-CRITICAL: Only recommend a 5% card if there is a direct, clear match. Do not stretch categories.
+PRIORITY ORDER — apply the first rule that matches, no exceptions:
+1. Freedom Flex 5% — if merchant clearly falls under a Flex category
+2. Discover it 5% — if merchant clearly falls under a Discover category (and not Flex)
+3. Chase Sapphire Preferred 3x — if merchant is dining/food, no rotating card covers it
+4. Chase Sapphire Preferred 2x — if merchant is travel, no rotating card covers it
+5. Chase Freedom Unlimited 1.5% — default if nothing above applies
+
+STRICT RULES — absolute, never override:
+- A 5% rotating card ALWAYS beats 3x or 2x fixed. Always. No exceptions.
+- Do NOT invent reasons why a 5% card shouldn't apply
+- Do NOT consider any cards outside this list
+- Only skip a 5% card if the merchant genuinely doesn't match the category
 
 RESPONSE FORMAT — plain text only, no markdown, no emoji, exactly 3 lines:
 Line 1: [CARD NAME] — [rate]
 Line 2: [One sentence explaining why, mentioning the specific category match or lack thereof.]
 Line 3: why: [under 10 words, lowercase]
 
-Valid card names: Chase Freedom Flex, Chase Freedom Unlimited, Discover it`;
+Valid card names: Chase Freedom Flex, Chase Freedom Unlimited, Chase Sapphire Preferred, Discover it`;
 
 // ── APP ──────────────────────────────────────────────────────────────────────
 
@@ -525,8 +601,13 @@ function setLoading(on) {
 function showError(msg) { const e = document.getElementById('errorMsg'); e.textContent = msg; e.className = 'error-msg visible'; }
 function hideError() { document.getElementById('errorMsg').className = 'error-msg'; }
 
-function renderStatic(r) {
-  return `<span class="static-tag">instant · no search needed</span>
+function renderStatic(r, sourceTag) {
+  let tag = sourceTag || 'instant · fixed rule';
+  if (!sourceTag) {
+    if (r.card === 'Chase Freedom Flex' && r.rate === '5% this quarter') tag = `instant · ${rotatingCategories.quarter || 'rotating'} category`;
+    if (r.card === 'Discover it' && r.rate === '5% this quarter') tag = `instant · ${rotatingCategories.quarter || 'rotating'} category`;
+  }
+  return `<span class="static-tag">${tag}</span>
           <span class="card-name">${r.card} — ${r.rate}</span>
           <span class="reason">${r.reason}</span>
           <span class="why">${r.why}</span>`;
@@ -587,7 +668,7 @@ async function askClaude() {
   document.getElementById('resultTs').textContent = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
   document.getElementById('resultContent').innerHTML = '';
 
-  // Full priority classification — instant if result found, AI fallback if null
+  // ── PATH 1: keyword match → instant JS, no API ───────────────────────────
   const result = classify(merchant);
   if (result) {
     document.getElementById('resultContent').innerHTML = renderStatic(result);
@@ -595,41 +676,54 @@ async function askClaude() {
     return;
   }
 
-  // Dynamic path — rotating categories
+  // ── PATH 2 & 3 need API key ──────────────────────────────────────────────
   const apiKey = localStorage.getItem('claudeKey');
   if (!apiKey) { showSetup(); showError('Add your API key first.'); box.className = 'result-box'; return; }
 
   setLoading(true);
   try {
-    // Use pre-fetched categories if available (no web search needed)
     const hasCats = rotatingCategories.flex && rotatingCategories.discover;
-    const prompt = hasCats ? buildDynamicPrompt(rotatingCategories) : DYNAMIC_PROMPT_SEARCH;
-    const tools = hasCats ? [] : [{ type: 'web_search_20250305', name: 'web_search' }];
 
-    const body = {
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 300,
-      system: prompt,
-      messages: [{ role: 'user', content: `What card for: ${merchant}` }]
-    };
-    if (tools.length) body.tools = tools;
+    if (hasCats) {
+      // ── PATH 2: categories loaded → AI identifies merchant type → JS picks card
+      document.getElementById('searchingTag').textContent = '⟳ IDENTIFYING MERCHANT...';
+      const detectedCat = await identifyMerchant(merchant, apiKey);
+      const categories = detectedCat === 'other' ? [] : [detectedCat];
+      const result2 = classifyByCategory(categories, merchant);
+      const tag = detectedCat === 'other'
+        ? 'identified · no category match'
+        : `identified as · ${detectedCat}`;
+      document.getElementById('resultContent').innerHTML = renderStatic(result2, tag);
+      addToHistory(merchant, result2.card);
 
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify(body)
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error?.message || `API error ${res.status}`);
-    const answer = data.content?.find(b => b.type === 'text')?.text || 'No recommendation returned.';
-    document.getElementById('resultContent').innerHTML = renderDynamic(answer);
-    const m = answer.match(/^(.+?)\s*—/m);
-    addToHistory(merchant, m ? m[1].trim() : '—');
+    } else {
+      // ── PATH 3: no categories cached → AI searches + recommends (legacy fallback)
+      document.getElementById('searchingTag').textContent = '⟳ SEARCHING CATEGORIES...';
+      const body = {
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 300,
+        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+        system: DYNAMIC_PROMPT_SEARCH,
+        messages: [{ role: 'user', content: `What card for: ${merchant}` }]
+      };
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error?.message || `API error ${res.status}`);
+      const answer = data.content?.find(b => b.type === 'text')?.text || 'No recommendation returned.';
+      document.getElementById('resultContent').innerHTML = renderDynamic(answer);
+      const m = answer.match(/^(.+?)\s*—/m);
+      addToHistory(merchant, m ? m[1].trim() : '—');
+    }
+
   } catch (err) {
     if (err.message.includes('401')) { showSetup(); showError('Invalid API key — re-enter above.'); }
     else { showError(`Error: ${err.message}`); }
