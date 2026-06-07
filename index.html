@@ -170,12 +170,12 @@
 
     <div class="system-group-label">Core — Chase trifecta</div>
     <div class="sys-card featured" onclick="quickAsk('Restaurant')">
-      <div class="sys-card-top"><span class="sys-name">Chase Sapphire Preferred</span><span class="sys-tag tag-blue">Daily driver</span></div>
-      <div class="sys-detail">Dining (3x) · Travel (2x) · Points hub</div>
+      <div class="sys-card-top"><span class="sys-name">Chase Sapphire Reserve</span><span class="sys-tag tag-blue">Daily driver</span></div>
+      <div class="sys-detail">Dining (3x) · Travel (3x) · Points hub</div>
     </div>
     <div class="sys-card featured" onclick="quickAsk('Groceries')">
       <div class="sys-card-top"><span class="sys-name">Chase Freedom Flex</span><span class="sys-tag tag-blue">Category booster</span></div>
-      <div class="sys-detail">5% rotating quarterly · pools with Sapphire</div>
+      <div class="sys-detail">5% rotating quarterly · pools with Reserve</div>
       <div class="sys-detail-live" id="flexCats">—</div>
     </div>
     <div class="sys-card featured" onclick="quickAsk('CVS')">
@@ -192,11 +192,19 @@
       <div class="sys-card-top"><span class="sys-name">JetBlue Card</span><span class="sys-tag tag-teal">JetBlue only</span></div>
       <div class="sys-detail">3x TrueBlue · BOS→FL trips</div>
     </div>
+    <div class="sys-card" onclick="quickAsk('United airlines flight')">
+      <div class="sys-card-top"><span class="sys-name">United Explorer</span><span class="sys-tag tag-teal">United only</span></div>
+      <div class="sys-detail">2x United miles · United.com direct only</div>
+    </div>
 
     <div class="system-group-label" style="margin-top:16px">Perks only</div>
     <div class="sys-card">
       <div class="sys-card-top"><span class="sys-name">Amex Platinum (dad's)</span><span class="sys-tag tag-gray">No spend</span></div>
       <div class="sys-detail">Lounge access only · don't charge purchases</div>
+    </div>
+    <div class="sys-card">
+      <div class="sys-card-top"><span class="sys-name">Chase Sapphire Preferred</span><span class="sys-tag tag-gray">No spend</span></div>
+      <div class="sys-detail">Keep open for history · Reserve covers all spend</div>
     </div>
 
     <div class="system-group-label" style="margin-top:16px">Keep open, rarely use</div>
@@ -220,24 +228,33 @@
 
 <script>
 // ── CARD RULES ───────────────────────────────────────────────────────────────
-// Priority order: Bilt > JetBlue > Flex 5% > Discover 5% > CSP 3x > CSP 2x > FU 1.5%
+// Priority order: Bilt > JetBlue > United > Lyft (5x) > Hotel (4x) > Airline (3x) > Flex 5% > Discover 5% > CSR 3x dining > CSR 3x travel > FU 1.5%
 
 const CARD_RESULTS = {
-  bilt:      { card: 'Bilt Mastercard',          rate: '1x points',      reason: 'The only card that earns points on rent with no transaction fee.',                      why: 'rent-only card, no fee' },
-  jetblue:   { card: 'JetBlue Card',             rate: '3x TrueBlue',    reason: 'Use for JetBlue.com bookings only to earn TrueBlue points and discounts.',               why: 'jetblue bookings only' },
-  flex5:     { card: 'Chase Freedom Flex',        rate: '5% this quarter', reason: '',  why: '5% beats sapphire preferred' },
+  bilt:      { card: 'Bilt Mastercard',          rate: '1x points',       reason: 'The only card that earns points on rent with no transaction fee.',                        why: 'rent-only card, no fee' },
+  jetblue:   { card: 'JetBlue Card',             rate: '3x TrueBlue',     reason: 'Use for JetBlue.com bookings only to earn TrueBlue points and discounts.',                 why: 'jetblue bookings only' },
+  united:    { card: 'United Explorer',          rate: '2x United miles', reason: 'Use for United.com direct bookings to earn United miles and protect benefits.',            why: 'united.com direct bookings only' },
+  lyft:      { card: 'Chase Sapphire Reserve',   rate: '5x on Lyft',      reason: 'Chase Sapphire Reserve earns 5x on Lyft rides through the Chase-Lyft partnership.',       why: 'chase-lyft partnership, 5x' },
+  hotel:     { card: 'Chase Sapphire Reserve',   rate: '4x on hotels',    reason: 'Chase Sapphire Reserve earns 4x on hotel stays booked directly.',                          why: '4x hotels, transfer partners' },
+  airline:   { card: 'Chase Sapphire Reserve',   rate: '3x on flights',   reason: 'Chase Sapphire Reserve earns 3x on flights — use this for any airline not on JetBlue or United.',  why: '3x flights, transfer partners' },
+  flex5:     { card: 'Chase Freedom Flex',        rate: '5% this quarter', reason: '',  why: '5% beats sapphire reserve' },
   discover5: { card: 'Discover it',              rate: '5% this quarter', reason: '',  why: '5% rotating, flex doesn\'t cover it' },
-  csp_dining:{ card: 'Chase Sapphire Preferred', rate: '3x dining',      reason: 'Sapphire earns 3x on all dining — restaurants, cafes, delivery, and bars.',             why: '3x dining, transfer partners' },
-  csp_travel:{ card: 'Chase Sapphire Preferred', rate: '2x travel',      reason: 'Sapphire earns 2x on all travel — flights, hotels, Uber, transit, parking.',            why: '2x travel, transfer partners' },
-  fu:        { card: 'Chase Freedom Unlimited',  rate: '1.5% catch-all', reason: 'No rotating 5% category or higher multiplier applies — Freedom Unlimited is the default.', why: 'default catch-all' },
+  csr_dining:{ card: 'Chase Sapphire Reserve',   rate: '3x dining',       reason: 'Sapphire Reserve earns 3x on all dining — restaurants, cafes, delivery, and bars.',       why: '3x dining, transfer partners' },
+  csr_travel:{ card: 'Chase Sapphire Reserve',   rate: '3x travel',       reason: 'Sapphire Reserve earns 3x on all travel — flights, hotels, Uber, transit, parking.',      why: '3x travel, transfer partners' },
+  fu:        { card: 'Chase Freedom Unlimited',  rate: '1.5% catch-all',  reason: 'No rotating 5% category or higher multiplier applies — Freedom Unlimited is the default.', why: 'default catch-all' },
 };
 
 // Keyword lists for detecting merchant category
 const KEYWORDS = {
   rent:    ['rent', 'landlord', 'bilt'],
   jetblue: ['jetblue', 'jet blue'],
+  united:  ['united airlines', 'united.com', 'ua.com'],
+  lyft:    ['lyft'],
+  hotel:   ['hotel', 'airbnb', 'vrbo', 'marriott', 'hilton', 'hyatt', 'ihg', 'sheraton', 'westin', 'ritz', 'four seasons', 'motel', 'inn', 'resort', 'hostel'],
+  airline: ['flight', 'airline', 'airport', 'delta', 'american airlines', 'southwest', 'british airways', 'lufthansa', 'emirates', 'spirit', 'frontier', 'alaska airlines'],
+  travel:  ['uber', 'taxi', 'mbta', 'train', 'subway', 'amtrak', 'parking', 'toll', 'ferry', 'car rental', 'zipcar', 'commuter rail', 'transit'],
   dining:  ['restaurant','dining','dinner','lunch','breakfast','cafe','coffee','starbucks','chipotle','tatte','doordash','ubereats','grubhub','seamless','food delivery','bar','nightlife','bakery','pizza','sushi','thai','mexican','italian','ramen','burger','sandwich','deli','brunch','bistro','nespresso','pressed cafe','cuppa','kava','tavern','grille','cantina','trattoria','brasserie','eatery','kitchen','grill','taqueria','bbq'],
-  travel:  ['flight','hotel','airbnb','uber','lyft','taxi','mbta','train','subway','amtrak','parking','toll','ferry','car rental','airline','airport','transit','delta','american airlines','united airlines','southwest','british airways','lufthansa','emirates','zipcar','commuter rail'],
+  travel:  ['flight','hotel','airbnb','uber','taxi','mbta','train','subway','amtrak','parking','toll','ferry','car rental','airline','airport','transit','delta','american airlines','united airlines','southwest','british airways','lufthansa','emirates','zipcar','commuter rail'],
   grocery: ['grocery','groceries','supermarket','star market','starmarket','market basket','hannaford','stop & shop','stop and shop','shaw\'s','shaws','whole foods','trader joe','wegmans','aldi','lidl','kroger','safeway','publix','costco','bj\'s','bjs','sam\'s club','sams club','h-e-b','heb','food lion','giant','meijer','sprouts'],
 };
 
@@ -245,7 +262,9 @@ const KEYWORDS = {
 // So if Flex returns "Grocery stores", we know to check grocery keywords against it
 const CATEGORY_ALIASES = {
   dining:   ['dining', 'restaurants', 'food', 'eating'],
-  travel:   ['travel', 'hotels', 'airlines', 'gas stations', 'gas', 'transit', 'transportation'],
+  travel:   ['travel', 'transit', 'transportation'],
+  hotel:    ['hotels', 'hotel', 'lodging', 'accommodation'],
+  airline:  ['airlines', 'airline', 'flights', 'air travel'],
   grocery:  ['grocery', 'groceries', 'supermarket', 'supermarkets', 'wholesale clubs', 'wholesale'],
   amazon:   ['amazon', 'amazon.com', 'whole foods'],
   drugstore:['drugstore', 'drug stores', 'pharmacy', 'cvs', 'walgreens'],
@@ -297,6 +316,18 @@ function classify(input) {
   // 2. JetBlue — always JetBlue card
   if (categories.includes('jetblue')) return CARD_RESULTS.jetblue;
 
+  // 3. United — United.com direct bookings only
+  if (categories.includes('united')) return CARD_RESULTS.united;
+
+  // 4. Lyft — 5x CSR partnership beats rotating 5%
+  if (categories.includes('lyft')) return CARD_RESULTS.lyft;
+
+  // 5. Hotels — 4x CSR
+  if (categories.includes('hotel')) return CARD_RESULTS.hotel;
+
+  // 6. Airlines (not JetBlue/United) — 3x CSR
+  if (categories.includes('airline')) return CARD_RESULTS.airline;
+
   // If we have rotating categories loaded, check them before fixed rules
   const hasCats = rotatingCategories.flex && rotatingCategories.discover;
   if (hasCats) {
@@ -319,8 +350,8 @@ function classify(input) {
     }
 
     // 5. Neither rotating card matches — apply fixed multipliers
-    if (categories.includes('dining')) return CARD_RESULTS.csp_dining;
-    if (categories.includes('travel')) return CARD_RESULTS.csp_travel;
+    if (categories.includes('dining')) return CARD_RESULTS.csr_dining;
+    if (categories.includes('travel')) return CARD_RESULTS.csr_travel;
 
     // 6. Known category (grocery, drugstore, etc.), no rotating match → Freedom Unlimited
     if (category) return CARD_RESULTS.fu;
@@ -330,8 +361,8 @@ function classify(input) {
   }
 
   // No rotating categories yet — fixed rules for known categories, AI for ambiguous
-  if (categories.includes('dining')) return CARD_RESULTS.csp_dining;
-  if (categories.includes('travel')) return CARD_RESULTS.csp_travel;
+  if (categories.includes('dining')) return CARD_RESULTS.csr_dining;
+  if (categories.includes('travel')) return CARD_RESULTS.csr_travel;
   if (category) return CARD_RESULTS.fu; // grocery, drugstore etc. → FU if no categories loaded
 
   // Truly unknown → AI fallback (will web search since no categories cached)
@@ -385,8 +416,8 @@ function classifyByCategory(categories, merchant) {
       why: `5% discover, flex doesn't apply` };
   }
 
-  if (categories.includes('dining')) return CARD_RESULTS.csp_dining;
-  if (categories.includes('travel')) return CARD_RESULTS.csp_travel;
+  if (categories.includes('dining')) return CARD_RESULTS.csr_dining;
+  if (categories.includes('travel')) return CARD_RESULTS.csr_travel;
   return CARD_RESULTS.fu;
 }
 
@@ -417,8 +448,8 @@ CURRENT ROTATING CATEGORIES (already fetched — do NOT search):
 PRIORITY ORDER — apply the first rule that matches, no exceptions:
 1. Freedom Flex 5% — if merchant clearly falls under a Flex category above
 2. Discover it 5% — if merchant clearly falls under a Discover category above (and not Flex)
-3. Chase Sapphire Preferred 3x — if merchant is dining/food but no rotating card covers it
-4. Chase Sapphire Preferred 2x — if merchant is travel but no rotating card covers it
+3. Chase Sapphire Reserve 3x — if merchant is dining/food but no rotating card covers it
+4. Chase Sapphire Reserve 3x — if merchant is travel but no rotating card covers it
 5. Chase Freedom Unlimited 1.5% — default if nothing above applies
 
 STRICT RULES — these are absolute, never override them:
@@ -432,7 +463,7 @@ Line 1: [CARD NAME] — [rate]
 Line 2: [One sentence explaining why, mentioning the specific category match or lack thereof.]
 Line 3: why: [under 10 words, lowercase]
 
-Valid card names: Chase Freedom Flex, Chase Freedom Unlimited, Chase Sapphire Preferred, Discover it`;
+Valid card names: Chase Freedom Flex, Chase Freedom Unlimited, Chase Sapphire Reserve, Discover it`;
 }
 
 function retryFetch() {
@@ -530,7 +561,7 @@ function setFetchStatus(state, label) {
 // ── DYNAMIC PROMPT: only for ambiguous/rotating category queries ─────────────
 // Uses pre-fetched categories if available, falls back to web search.
 
-const DYNAMIC_PROMPT_SEARCH = `You are a credit card advisor for Manuel in Boston. A static pre-filter already handles rent (Bilt), JetBlue, and clearly known merchants. You only receive ambiguous queries.
+const DYNAMIC_PROMPT_SEARCH = `You are a credit card advisor for Manuel in Boston. A static pre-filter already handles rent (Bilt), JetBlue, United.com direct bookings, and clearly known merchants. You only receive ambiguous queries.
 
 YOUR ONLY JOB: check if Chase Freedom Flex or Discover it has an active 5% category covering this merchant this quarter (${getCurrentQuarter()}).
 
@@ -541,12 +572,12 @@ STEP 3: Does this merchant clearly fall under one of those active categories?
 PRIORITY ORDER — apply the first rule that matches, no exceptions:
 1. Freedom Flex 5% — if merchant clearly falls under a Flex category
 2. Discover it 5% — if merchant clearly falls under a Discover category (and not Flex)
-3. Chase Sapphire Preferred 3x — if merchant is dining/food, no rotating card covers it
-4. Chase Sapphire Preferred 2x — if merchant is travel, no rotating card covers it
+3. Chase Sapphire Reserve 3x — if merchant is dining/food, no rotating card covers it
+4. Chase Sapphire Reserve 3x — if merchant is travel, no rotating card covers it
 5. Chase Freedom Unlimited 1.5% — default if nothing above applies
 
 STRICT RULES — absolute, never override:
-- A 5% rotating card ALWAYS beats 3x or 2x fixed. Always. No exceptions.
+- A 5% rotating card ALWAYS beats 3x fixed. Always. No exceptions.
 - Do NOT invent reasons why a 5% card shouldn't apply
 - Do NOT consider any cards outside this list
 - Only skip a 5% card if the merchant genuinely doesn't match the category
@@ -556,7 +587,7 @@ Line 1: [CARD NAME] — [rate]
 Line 2: [One sentence explaining why, mentioning the specific category match or lack thereof.]
 Line 3: why: [under 10 words, lowercase]
 
-Valid card names: Chase Freedom Flex, Chase Freedom Unlimited, Chase Sapphire Preferred, Discover it`;
+Valid card names: Chase Freedom Flex, Chase Freedom Unlimited, Chase Sapphire Reserve, Discover it`;
 
 // ── APP ──────────────────────────────────────────────────────────────────────
 
@@ -608,7 +639,7 @@ function renderStatic(r, sourceTag) {
 
 function renderDynamic(text) {
   const lines = text.trim().split('\n').filter(l => l.trim());
-  const VALID_CARDS = ['Chase Freedom Flex', 'Chase Freedom Unlimited', 'Chase Sapphire Preferred', 'Discover it'];
+  const VALID_CARDS = ['Chase Freedom Flex', 'Chase Freedom Unlimited', 'Chase Sapphire Reserve', 'Discover it', 'United Explorer'];
   let cardLine = '', reasonLine = '', whyLine = '';
 
   for (const line of lines) {
