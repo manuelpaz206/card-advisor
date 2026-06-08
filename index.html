@@ -250,16 +250,18 @@ const CARD_RESULTS = {
 
 // Keyword lists for detecting merchant category
 const KEYWORDS = {
-  rent:    ['rent', 'landlord', 'bilt'],
+  rent:    ['rent payment', 'pay rent', 'landlord', 'bilt rent'],
   jetblue: ['jetblue', 'jet blue'],
   united:  ['united airlines', 'united.com', 'ua.com'],
   lyft:    ['lyft'],
   hotel:   ['hotel', 'airbnb', 'vrbo', 'marriott', 'hilton', 'hyatt', 'ihg', 'sheraton', 'westin', 'ritz', 'four seasons', 'motel', 'inn', 'resort', 'hostel'],
   airline: ['flight', 'airline', 'airport', 'delta', 'american airlines', 'southwest', 'british airways', 'lufthansa', 'emirates', 'spirit', 'frontier', 'alaska airlines'],
-  gas:     ['gas station', 'gas', 'shell', 'exxon', 'mobil', 'bp', 'chevron', 'citgo', 'sunoco', 'speedway', 'cumberland farms', 'cumbys'],
-  dining:  ['restaurant','dining','dinner','lunch','breakfast','cafe','coffee','starbucks','chipotle','tatte','doordash','ubereats','grubhub','seamless','food delivery','bar','nightlife','bakery','pizza','sushi','thai','mexican','italian','ramen','burger','sandwich','deli','brunch','bistro','nespresso','pressed cafe','cuppa','kava','tavern','grille','cantina','trattoria','brasserie','eatery','kitchen','grill','taqueria','bbq'],
-  travel:  ['uber', 'taxi', 'mbta', 'train', 'subway', 'amtrak', 'parking', 'toll', 'ferry', 'car rental', 'zipcar', 'commuter rail', 'transit'],
+  gas:     ['gas station', 'shell', 'exxon', 'mobil', 'bp gas', 'chevron', 'citgo', 'sunoco', 'speedway', 'cumberland farms', 'cumbys'],
+  dining:  ['restaurant','dining','dinner','lunch','breakfast','cafe','coffee','starbucks','chipotle','tatte','doordash','ubereats','grubhub','seamless','food delivery','bar ','nightlife','bakery','pizza','sushi','thai','mexican','italian','ramen','burger','sandwich','deli','brunch','bistro','nespresso','pressed cafe','cuppa','kava','tavern','grille','cantina','trattoria','brasserie','eatery','kitchen','grill','taqueria','bbq'],
+  travel:  ['uber','taxi','mbta','train','subway','amtrak','parking','toll','ferry','car rental','zipcar','commuter rail','transit'],
   grocery: ['grocery','groceries','supermarket','star market','starmarket','market basket','hannaford','stop & shop','stop and shop','shaw\'s','shaws','whole foods','trader joe','wegmans','aldi','lidl','kroger','safeway','publix','costco','bj\'s','bjs','sam\'s club','sams club','h-e-b','heb','food lion','giant','meijer','sprouts'],
+  drugstore: ['cvs','walgreens','rite aid','duane reade','pharmacy'],
+  general: ['target','walmart','home depot','lowe\'s','lowes','best buy','apple.com','apple store','netflix','spotify','hulu','disney+','amazon','gym','planet fitness','equinox','la fitness','anytime fitness'],
 };
 
 // Maps rotating category names (from AI fetch) → our local keyword categories
@@ -334,7 +336,9 @@ function classify(input) {
 
   // If we have rotating categories loaded, check them before fixed rules
   const hasCats = rotatingCategories.flex && rotatingCategories.discover;
-  if (hasCats) {
+  // Never run rotating check for these — fixed multipliers or catch-all, no rotating category should override
+  const skipRotating = categories.includes('travel') || categories.includes('gas') || categories.includes('drugstore') || categories.includes('general');
+  if (hasCats && !skipRotating) {
     // Check ALL detected categories against rotating lists (fixes Whole Foods/Amazon overlap)
     const flexMatch  = categories.some(cat => matchesRotating(q, cat, rotatingCategories.flex));
     const discMatch  = categories.some(cat => matchesRotating(q, cat, rotatingCategories.discover));
@@ -367,10 +371,10 @@ function classify(input) {
   }
 
   // No rotating categories yet — fixed rules for known categories, AI for ambiguous
-  if (categories.includes('dining')) return CARD_RESULTS.csr_dining;
-  if (categories.includes('travel')) return CARD_RESULTS.csr_travel;
-  if (categories.includes('gas')) return CARD_RESULTS.gas;
-  if (category) return CARD_RESULTS.fu; // grocery, drugstore etc. → FU if no categories loaded
+  if (categories.includes('dining'))    return CARD_RESULTS.csr_dining;
+  if (categories.includes('travel'))    return CARD_RESULTS.csr_travel;
+  if (categories.includes('gas'))       return CARD_RESULTS.gas;
+  if (category) return CARD_RESULTS.fu; // grocery, drugstore, general, etc. → FU if no categories loaded
 
   // Truly unknown → AI fallback (will web search since no categories cached)
   return null;
@@ -380,7 +384,7 @@ function classify(input) {
 // When a merchant name doesn't match any keyword, ask AI what TYPE it is.
 // AI only answers a factual question — card selection stays in JS.
 
-const VALID_CATEGORIES = ['dining', 'travel', 'grocery', 'drugstore', 'streaming', 'amazon', 'gas', 'other'];
+const VALID_CATEGORIES = ['dining', 'travel', 'grocery', 'drugstore', 'streaming', 'amazon', 'gas', 'general', 'other'];
 
 async function identifyMerchant(merchant, apiKey) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -396,7 +400,7 @@ async function identifyMerchant(merchant, apiKey) {
       max_tokens: 50,
       messages: [{
         role: 'user',
-        content: `Category of "${merchant}"? One word: dining, travel, grocery, drugstore, streaming, amazon, gas, or other.`
+        content: `Category of "${merchant}"? One word only: dining, travel, grocery, drugstore, streaming, amazon, gas, general, or other.`
       }]
     })
   });
@@ -425,7 +429,9 @@ function classifyByCategory(categories, merchant) {
 
   if (categories.includes('dining')) return CARD_RESULTS.csr_dining;
   if (categories.includes('travel')) return CARD_RESULTS.csr_travel;
-  if (categories.includes('gas')) return CARD_RESULTS.gas;
+  if (categories.includes('gas'))    return CARD_RESULTS.gas;
+  if (categories.includes('drugstore')) return CARD_RESULTS.fu;
+  if (categories.includes('general'))   return CARD_RESULTS.fu;
   return CARD_RESULTS.fu;
 }
 
