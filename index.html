@@ -133,12 +133,15 @@
   <div class="chips">
     <div class="chip" onclick="quickAsk('Trader Joes')">Trader Joe's</div>
     <div class="chip" onclick="quickAsk('Uber')">Uber</div>
+    <div class="chip" onclick="quickAsk('Lyft')">Lyft</div>
     <div class="chip" onclick="quickAsk('Restaurant')">Restaurant</div>
     <div class="chip" onclick="quickAsk('Amazon')">Amazon</div>
     <div class="chip" onclick="quickAsk('Delta flight')">Flight</div>
+    <div class="chip" onclick="quickAsk('Marriott hotel')">Hotel</div>
     <div class="chip" onclick="quickAsk('Rent')">Rent</div>
-    <div class="chip" onclick="quickAsk('Gym membership')">Gym</div>
+    <div class="chip" onclick="quickAsk('Shell gas station')">Gas</div>
     <div class="chip" onclick="quickAsk('JetBlue flight')">JetBlue</div>
+    <div class="chip" onclick="quickAsk('United airlines flight')">United</div>
   </div>
 
   <div class="fetch-status" id="fetchStatus" onclick="retryFetch()" style="cursor:pointer">
@@ -228,7 +231,7 @@
 
 <script>
 // ── CARD RULES ───────────────────────────────────────────────────────────────
-// Priority order: Bilt > JetBlue > United > Lyft (5x) > Hotel (4x) > Airline (3x) > Flex 5% > Discover 5% > CSR 3x dining > CSR 3x travel > FU 1.5%
+// Priority order: Bilt > JetBlue > United > Lyft (5x) > Hotel (4x) > Airline (3x) > Flex 5% > Discover 5% > CSR 3x dining > CSR 3x travel > Gas (FU 1.5%) > FU 1.5%
 
 const CARD_RESULTS = {
   bilt:      { card: 'Bilt Mastercard',          rate: '1x points',       reason: 'The only card that earns points on rent with no transaction fee.',                        why: 'rent-only card, no fee' },
@@ -239,6 +242,7 @@ const CARD_RESULTS = {
   airline:   { card: 'Chase Sapphire Reserve',   rate: '3x on flights',   reason: 'Chase Sapphire Reserve earns 3x on flights — use this for any airline not on JetBlue or United.',  why: '3x flights, transfer partners' },
   flex5:     { card: 'Chase Freedom Flex',        rate: '5% this quarter', reason: '',  why: '5% beats sapphire reserve' },
   discover5: { card: 'Discover it',              rate: '5% this quarter', reason: '',  why: '5% rotating, flex doesn\'t cover it' },
+  gas:       { card: 'Chase Freedom Unlimited',  rate: '1.5% catch-all',  reason: 'CSR earns 1x on gas — Freedom Unlimited\'s 1.5% is your best Chase option here.',         why: 'csr earns 1x on gas, fu wins' },
   csr_dining:{ card: 'Chase Sapphire Reserve',   rate: '3x dining',       reason: 'Sapphire Reserve earns 3x on all dining — restaurants, cafes, delivery, and bars.',       why: '3x dining, transfer partners' },
   csr_travel:{ card: 'Chase Sapphire Reserve',   rate: '3x travel',       reason: 'Sapphire Reserve earns 3x on all travel — flights, hotels, Uber, transit, parking.',      why: '3x travel, transfer partners' },
   fu:        { card: 'Chase Freedom Unlimited',  rate: '1.5% catch-all',  reason: 'No rotating 5% category or higher multiplier applies — Freedom Unlimited is the default.', why: 'default catch-all' },
@@ -252,9 +256,9 @@ const KEYWORDS = {
   lyft:    ['lyft'],
   hotel:   ['hotel', 'airbnb', 'vrbo', 'marriott', 'hilton', 'hyatt', 'ihg', 'sheraton', 'westin', 'ritz', 'four seasons', 'motel', 'inn', 'resort', 'hostel'],
   airline: ['flight', 'airline', 'airport', 'delta', 'american airlines', 'southwest', 'british airways', 'lufthansa', 'emirates', 'spirit', 'frontier', 'alaska airlines'],
-  travel:  ['uber', 'taxi', 'mbta', 'train', 'subway', 'amtrak', 'parking', 'toll', 'ferry', 'car rental', 'zipcar', 'commuter rail', 'transit'],
+  gas:     ['gas station', 'gas', 'shell', 'exxon', 'mobil', 'bp', 'chevron', 'citgo', 'sunoco', 'speedway', 'cumberland farms', 'cumbys'],
   dining:  ['restaurant','dining','dinner','lunch','breakfast','cafe','coffee','starbucks','chipotle','tatte','doordash','ubereats','grubhub','seamless','food delivery','bar','nightlife','bakery','pizza','sushi','thai','mexican','italian','ramen','burger','sandwich','deli','brunch','bistro','nespresso','pressed cafe','cuppa','kava','tavern','grille','cantina','trattoria','brasserie','eatery','kitchen','grill','taqueria','bbq'],
-  travel:  ['flight','hotel','airbnb','uber','taxi','mbta','train','subway','amtrak','parking','toll','ferry','car rental','airline','airport','transit','delta','american airlines','united airlines','southwest','british airways','lufthansa','emirates','zipcar','commuter rail'],
+  travel:  ['uber', 'taxi', 'mbta', 'train', 'subway', 'amtrak', 'parking', 'toll', 'ferry', 'car rental', 'zipcar', 'commuter rail', 'transit'],
   grocery: ['grocery','groceries','supermarket','star market','starmarket','market basket','hannaford','stop & shop','stop and shop','shaw\'s','shaws','whole foods','trader joe','wegmans','aldi','lidl','kroger','safeway','publix','costco','bj\'s','bjs','sam\'s club','sams club','h-e-b','heb','food lion','giant','meijer','sprouts'],
 };
 
@@ -262,7 +266,7 @@ const KEYWORDS = {
 // So if Flex returns "Grocery stores", we know to check grocery keywords against it
 const CATEGORY_ALIASES = {
   dining:   ['dining', 'restaurants', 'food', 'eating'],
-  travel:   ['travel', 'transit', 'transportation'],
+  travel:   ['chase travel portal', 'chase travel'],
   hotel:    ['hotels', 'hotel', 'lodging', 'accommodation'],
   airline:  ['airlines', 'airline', 'flights', 'air travel'],
   grocery:  ['grocery', 'groceries', 'supermarket', 'supermarkets', 'wholesale clubs', 'wholesale'],
@@ -335,23 +339,25 @@ function classify(input) {
     const flexMatch  = categories.some(cat => matchesRotating(q, cat, rotatingCategories.flex));
     const discMatch  = categories.some(cat => matchesRotating(q, cat, rotatingCategories.discover));
 
-    // 3. Freedom Flex 5% beats everything except Bilt/JetBlue
+    // Freedom Flex 5% beats everything except hardcoded specials above
     if (flexMatch) {
       return { ...CARD_RESULTS.flex5,
         reason: `Freedom Flex has 5% this quarter (${rotatingCategories.quarter}), which beats all other multipliers.`,
         why: `5% flex > other cards this quarter` };
     }
 
-    // 4. Discover 5% beats CSP and Freedom Unlimited
+    // Discover 5% beats CSR and Freedom Unlimited
     if (discMatch) {
       return { ...CARD_RESULTS.discover5,
         reason: `Discover it has 5% this quarter (${rotatingCategories.quarter}) and Freedom Flex doesn't cover this category.`,
         why: `5% discover, flex doesn't apply` };
     }
 
-    // 5. Neither rotating card matches — apply fixed multipliers
+    // Neither rotating card matches — apply fixed multipliers
     if (categories.includes('dining')) return CARD_RESULTS.csr_dining;
     if (categories.includes('travel')) return CARD_RESULTS.csr_travel;
+    // Gas: CSR earns 1x, so FU 1.5% wins among Chase cards
+    if (categories.includes('gas')) return CARD_RESULTS.gas;
 
     // 6. Known category (grocery, drugstore, etc.), no rotating match → Freedom Unlimited
     if (category) return CARD_RESULTS.fu;
@@ -363,6 +369,7 @@ function classify(input) {
   // No rotating categories yet — fixed rules for known categories, AI for ambiguous
   if (categories.includes('dining')) return CARD_RESULTS.csr_dining;
   if (categories.includes('travel')) return CARD_RESULTS.csr_travel;
+  if (categories.includes('gas')) return CARD_RESULTS.gas;
   if (category) return CARD_RESULTS.fu; // grocery, drugstore etc. → FU if no categories loaded
 
   // Truly unknown → AI fallback (will web search since no categories cached)
@@ -418,6 +425,7 @@ function classifyByCategory(categories, merchant) {
 
   if (categories.includes('dining')) return CARD_RESULTS.csr_dining;
   if (categories.includes('travel')) return CARD_RESULTS.csr_travel;
+  if (categories.includes('gas')) return CARD_RESULTS.gas;
   return CARD_RESULTS.fu;
 }
 
